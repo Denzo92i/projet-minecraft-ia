@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Minecraft House Classifier</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', sans-serif;
+            background-color: #0a0a0a;
+            /* fond noir */
+            color: #ffffff;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+        }
+
+        .container {
+            background-color: #111111;
+            /* carte noire */
+            border: 1px solid #222222;
+            border-radius: 16px;
+            padding: 40px;
+            width: 500px;
+            text-align: center;
+            box-shadow: 0 0 40px rgba(0, 0, 0, 0.8);
+        }
+
+        h1 {
+            font-size: 24px;
+            margin-bottom: 8px;
+            color: #ffffff;
+        }
+
+        p.subtitle {
+            color: #555;
+            margin-bottom: 30px;
+            font-size: 14px;
+        }
+
+        .upload-zone {
+            border: 2px dashed #333;
+            border-radius: 12px;
+            padding: 40px 20px;
+            cursor: pointer;
+            transition: all 0.3s;
+            margin-bottom: 20px;
+        }
+
+        .upload-zone:hover {
+            border-color: #555;
+            background-color: #1a1a1a;
+        }
+
+        .upload-zone p {
+            color: #555;
+            font-size: 14px;
+            margin-top: 8px;
+        }
+
+        #fileInput {
+            display: none;
+        }
+
+        #fileName {
+            color: #888;
+            font-size: 14px;
+            margin-bottom: 20px;
+            min-height: 20px;
+        }
+
+        button {
+            background-color: #ffffff;
+            /* bouton blanc sur fond noir */
+            color: #000000;
+            border: none;
+            padding: 14px 40px;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.3s;
+            width: 100%;
+        }
+
+        button:hover {
+            background-color: #dddddd;
+        }
+
+        button:disabled {
+            background-color: #222;
+            color: #555;
+            cursor: not-allowed;
+        }
+
+        #result {
+            margin-top: 30px;
+            padding: 20px;
+            border-radius: 12px;
+            display: none;
+        }
+
+        .result-house {
+            background-color: #0a1a0a;
+            border: 1px solid #1a5c1a;
+        }
+
+        .result-not-house {
+            background-color: #1a0a0a;
+            border: 1px solid #5c1a1a;
+        }
+
+        .result-icon {
+            font-size: 48px;
+            margin-bottom: 10px;
+        }
+
+        .result-title {
+            font-size: 22px;
+            font-weight: bold;
+            margin-bottom: 8px;
+        }
+
+        .result-confidence {
+            color: #555;
+            font-size: 14px;
+        }
+
+        .confidence-bar {
+            background-color: #1a1a1a;
+            border-radius: 8px;
+            height: 8px;
+            margin-top: 12px;
+            overflow: hidden;
+        }
+
+        .confidence-fill {
+            height: 100%;
+            border-radius: 8px;
+            transition: width 0.5s;
+        }
+
+        .fill-house {
+            background-color: #2ecc71;
+            /* vert pour maison */
+        }
+
+        .fill-not-house {
+            background-color: #e74c3c;
+            /* rouge pour non-maison */
+        }
+
+        .loading {
+            display: none;
+            margin-top: 20px;
+            color: #555;
+            font-size: 14px;
+        }
+    </style>
+</head>
+
+<body>
+<div class="container">
+
+    <h1>🏠 Minecraft House Classifier</h1>
+    <p class="subtitle">Analyse ta structure Minecraft et détecte si c'est une maison</p>
+
+    <div class="upload-zone" onclick="document.getElementById('fileInput').click()">
+        <div style="font-size: 40px;">📁</div>
+        <p>Clique pour choisir un fichier .schem ou .schematic</p>
+    </div>
+
+    <input type="file" id="fileInput" accept=".schem,.schematic" onchange="afficherNomFichier()">
+
+    <div id="fileName">Aucun fichier sélectionné</div>
+
+    <button id="analyzeBtn" onclick="analyser()" disabled>
+        Analyser
+    </button>
+
+    <div class="loading" id="loading">
+        ⏳ Analyse en cours...
+    </div>
+
+    <div id="result">
+        <div class="result-icon" id="resultIcon"></div>
+        <div class="result-title" id="resultTitle"></div>
+        <div class="result-confidence" id="resultConfidence"></div>
+        <div class="confidence-bar">
+            <div class="confidence-fill" id="confidenceFill"></div>
+        </div>
+    </div>
+
+</div>
+
+<script>
+    function afficherNomFichier() {
+        const input = document.getElementById('fileInput')
+        const fileName = document.getElementById('fileName')
+        const btn = document.getElementById('analyzeBtn')
+        if (input.files.length > 0) {
+            fileName.textContent = '📄 ' + input.files[0].name
+            btn.disabled = false
+        }
+    }
+
+    async function analyser() {
+        const input = document.getElementById('fileInput')
+        const btn = document.getElementById('analyzeBtn')
+        const loading = document.getElementById('loading')
+        const result = document.getElementById('result')
+        const fichier = input.files[0]
+        if (!fichier) return
+
+        result.style.display = 'none'
+        loading.style.display = 'block'
+        btn.disabled = true
+
+        const formData = new FormData()
+        formData.append('file', fichier)
+
+        try {
+            const response = await fetch('http://127.0.0.1:8000/predict', {
+                method: 'POST',
+                body: formData
+            })
+            const data = await response.json()
+            afficherResultat(data)
+        } catch (error) {
+            alert('Erreur : impossible de contacter l\'API.')
+        } finally {
+            loading.style.display = 'none'
+            btn.disabled = false
+        }
+    }
+
+    function afficherResultat(data) {
+        const result = document.getElementById('result')
+        const icon = document.getElementById('resultIcon')
+        const title = document.getElementById('resultTitle')
+        const confidence = document.getElementById('resultConfidence')
+        const fill = document.getElementById('confidenceFill')
+
+        result.style.display = 'block'
+        const pourcentage = Math.round(data.confidence * 100)
+
+        if (data.is_house) {
+            result.className = 'result-house'
+            icon.textContent = '🏠'
+            title.textContent = 'C\'est une maison !'
+            title.style.color = '#2ecc71'
+            fill.className = 'confidence-fill fill-house'
+        } else {
+            result.className = 'result-not-house'
+            icon.textContent = '❌'
+            title.textContent = 'Ce n\'est pas une maison'
+            title.style.color = '#e74c3c'
+            fill.className = 'confidence-fill fill-not-house'
+        }
+
+        confidence.textContent = `Confiance : ${pourcentage}%`
+        fill.style.width = pourcentage + '%'
+    }
+</script>
+
+</body>
+</html>
