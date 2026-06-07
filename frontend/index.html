@@ -5,16 +5,11 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Minecraft House Classifier</title>
     <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
 
         body {
             font-family: 'Segoe UI', sans-serif;
             background-color: #0a0a0a;
-            /* fond noir */
             color: #ffffff;
             display: flex;
             justify-content: center;
@@ -24,26 +19,17 @@
 
         .container {
             background-color: #111111;
-            /* carte noire */
             border: 1px solid #222222;
             border-radius: 16px;
             padding: 40px;
-            width: 500px;
+            width: 520px;
             text-align: center;
-            box-shadow: 0 0 40px rgba(0, 0, 0, 0.8);
+            box-shadow: 0 0 40px rgba(0,0,0,0.8);
         }
 
-        h1 {
-            font-size: 24px;
-            margin-bottom: 8px;
-            color: #ffffff;
-        }
+        h1 { font-size: 24px; margin-bottom: 8px; color: #ffffff; }
 
-        p.subtitle {
-            color: #555;
-            margin-bottom: 30px;
-            font-size: 14px;
-        }
+        p.subtitle { color: #555; margin-bottom: 30px; font-size: 14px; }
 
         .upload-zone {
             border: 2px dashed #333;
@@ -54,31 +40,15 @@
             margin-bottom: 20px;
         }
 
-        .upload-zone:hover {
-            border-color: #555;
-            background-color: #1a1a1a;
-        }
+        .upload-zone:hover { border-color: #555; background-color: #1a1a1a; }
+        .upload-zone p { color: #555; font-size: 14px; margin-top: 8px; }
 
-        .upload-zone p {
-            color: #555;
-            font-size: 14px;
-            margin-top: 8px;
-        }
+        #fileInput { display: none; }
 
-        #fileInput {
-            display: none;
-        }
-
-        #fileName {
-            color: #888;
-            font-size: 14px;
-            margin-bottom: 20px;
-            min-height: 20px;
-        }
+        #fileName { color: #888; font-size: 14px; margin-bottom: 20px; min-height: 20px; }
 
         button {
             background-color: #ffffff;
-            /* bouton blanc sur fond noir */
             color: #000000;
             border: none;
             padding: 14px 40px;
@@ -90,15 +60,8 @@
             width: 100%;
         }
 
-        button:hover {
-            background-color: #dddddd;
-        }
-
-        button:disabled {
-            background-color: #222;
-            color: #555;
-            cursor: not-allowed;
-        }
+        button:hover { background-color: #dddddd; }
+        button:disabled { background-color: #222; color: #555; cursor: not-allowed; }
 
         #result {
             margin-top: 30px;
@@ -107,31 +70,12 @@
             display: none;
         }
 
-        .result-house {
-            background-color: #0a1a0a;
-            border: 1px solid #1a5c1a;
-        }
+        .result-house { background-color: #0a1a0a; border: 1px solid #1a5c1a; }
+        .result-not-house { background-color: #1a0a0a; border: 1px solid #5c1a1a; }
 
-        .result-not-house {
-            background-color: #1a0a0a;
-            border: 1px solid #5c1a1a;
-        }
-
-        .result-icon {
-            font-size: 48px;
-            margin-bottom: 10px;
-        }
-
-        .result-title {
-            font-size: 22px;
-            font-weight: bold;
-            margin-bottom: 8px;
-        }
-
-        .result-confidence {
-            color: #555;
-            font-size: 14px;
-        }
+        .result-icon { font-size: 48px; margin-bottom: 10px; }
+        .result-title { font-size: 22px; font-weight: bold; margin-bottom: 8px; }
+        .result-confidence { color: #555; font-size: 14px; }
 
         .confidence-bar {
             background-color: #1a1a1a;
@@ -141,27 +85,76 @@
             overflow: hidden;
         }
 
-        .confidence-fill {
-            height: 100%;
-            border-radius: 8px;
-            transition: width 0.5s;
-        }
+        .confidence-fill { height: 100%; border-radius: 8px; transition: width 0.5s; }
+        .fill-house { background-color: #2ecc71; }
+        .fill-not-house { background-color: #e74c3c; }
 
-        .fill-house {
-            background-color: #2ecc71;
-            /* vert pour maison */
-        }
+        .loading { display: none; margin-top: 20px; color: #555; font-size: 14px; }
 
-        .fill-not-house {
-            background-color: #e74c3c;
-            /* rouge pour non-maison */
-        }
+        /* ============================================
+           SECTION SCORES
+        ============================================ */
 
-        .loading {
-            display: none;
+        .scores-section {
             margin-top: 20px;
-            color: #555;
+            border-top: 1px solid #222;
+            padding-top: 20px;
+        }
+
+        .scores-title {
             font-size: 14px;
+            color: #888;
+            margin-bottom: 16px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .score-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
+        }
+
+        .score-label {
+            font-size: 14px;
+            color: #aaa;
+            text-align: left;
+            width: 100px;
+        }
+
+        .stars {
+            display: flex;
+            gap: 4px;
+        }
+
+        .star {
+            font-size: 20px;
+            color: #333;
+            /* étoile vide par défaut */
+            transition: color 0.3s;
+        }
+
+        .star.active {
+            color: #f1c40f;
+            /* étoile jaune si active */
+        }
+
+        .score-number {
+            font-size: 14px;
+            color: #555;
+            width: 30px;
+            text-align: right;
+        }
+
+        .global-score {
+            margin-top: 16px;
+            padding: 12px;
+            background-color: #1a1a1a;
+            border-radius: 8px;
+            font-size: 18px;
+            font-weight: bold;
+            color: #f1c40f;
         }
     </style>
 </head>
@@ -178,16 +171,11 @@
     </div>
 
     <input type="file" id="fileInput" accept=".schem,.schematic" onchange="afficherNomFichier()">
-
     <div id="fileName">Aucun fichier sélectionné</div>
 
-    <button id="analyzeBtn" onclick="analyser()" disabled>
-        Analyser
-    </button>
+    <button id="analyzeBtn" onclick="analyser()" disabled>Analyser</button>
 
-    <div class="loading" id="loading">
-        ⏳ Analyse en cours...
-    </div>
+    <div class="loading" id="loading">⏳ Analyse en cours...</div>
 
     <div id="result">
         <div class="result-icon" id="resultIcon"></div>
@@ -195,6 +183,31 @@
         <div class="result-confidence" id="resultConfidence"></div>
         <div class="confidence-bar">
             <div class="confidence-fill" id="confidenceFill"></div>
+        </div>
+
+        <!-- SECTION SCORES - visible uniquement si c'est une maison -->
+        <div class="scores-section" id="scoresSection" style="display:none">
+            <div class="scores-title">⭐ Évaluation de la maison</div>
+
+            <div class="score-row">
+                <div class="score-label">Taille</div>
+                <div class="stars" id="starsTaille"></div>
+                <div class="score-number" id="numTaille"></div>
+            </div>
+
+            <div class="score-row">
+                <div class="score-label">Esthétique</div>
+                <div class="stars" id="starsEsthetique"></div>
+                <div class="score-number" id="numEsthetique"></div>
+            </div>
+
+            <div class="score-row">
+                <div class="score-label">Complexité</div>
+                <div class="stars" id="starsComplexite"></div>
+                <div class="score-number" id="numComplexite"></div>
+            </div>
+
+            <div class="global-score" id="globalScore"></div>
         </div>
     </div>
 
@@ -241,12 +254,28 @@
         }
     }
 
+    // Génère les étoiles pour un score donné
+    function afficherEtoiles(containerId, score) {
+        const container = document.getElementById(containerId)
+        container.innerHTML = ''
+        // On crée 5 étoiles
+        for (let i = 1; i <= 5; i++) {
+            const star = document.createElement('span')
+            star.className = 'star' + (i <= score ? ' active' : '')
+            // active = étoile jaune si i <= score
+            // ex: score=3 → étoiles 1,2,3 jaunes, 4,5 grises
+            star.textContent = '★'
+            container.appendChild(star)
+        }
+    }
+
     function afficherResultat(data) {
         const result = document.getElementById('result')
         const icon = document.getElementById('resultIcon')
         const title = document.getElementById('resultTitle')
         const confidence = document.getElementById('resultConfidence')
         const fill = document.getElementById('confidenceFill')
+        const scoresSection = document.getElementById('scoresSection')
 
         result.style.display = 'block'
         const pourcentage = Math.round(data.confidence * 100)
@@ -257,12 +286,31 @@
             title.textContent = 'C\'est une maison !'
             title.style.color = '#2ecc71'
             fill.className = 'confidence-fill fill-house'
+
+            // On affiche la section scores
+            scoresSection.style.display = 'block'
+
+            // On affiche les étoiles pour chaque critère
+            afficherEtoiles('starsTaille', data.scores.size)
+            afficherEtoiles('starsEsthetique', data.scores.aesthetic)
+            afficherEtoiles('starsComplexite', data.scores.complexity)
+
+            // On affiche les numéros
+            document.getElementById('numTaille').textContent = data.scores.size + '/5'
+            document.getElementById('numEsthetique').textContent = data.scores.aesthetic + '/5'
+            document.getElementById('numComplexite').textContent = data.scores.complexity + '/5'
+
+            // Score global
+            document.getElementById('globalScore').textContent = '⭐ Score global : ' + data.scores.global + ' / 5'
+
         } else {
             result.className = 'result-not-house'
             icon.textContent = '❌'
             title.textContent = 'Ce n\'est pas une maison'
             title.style.color = '#e74c3c'
             fill.className = 'confidence-fill fill-not-house'
+            scoresSection.style.display = 'none'
+            // On cache la section scores si c'est pas une maison
         }
 
         confidence.textContent = `Confiance : ${pourcentage}%`
