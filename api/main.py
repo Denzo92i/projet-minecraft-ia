@@ -1,15 +1,25 @@
 from fastapi import FastAPI, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
 import pickle
 import numpy as np
 import sys
 import os
 import tempfile
 
-sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'parsing'))
+ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+API_DIR = os.path.join(ROOT_DIR, 'api')
+PARSING_DIR = os.path.join(ROOT_DIR, 'parsing')
+
+sys.path.insert(0, API_DIR)
+sys.path.insert(0, PARSING_DIR)
+
 from parser import lire_schem
-from preprocessor import pretraiter
+from preprocessor import pretraiter, convertir_grille, crop_air
 from features import extraire_features
+from database import init_db, ajouter_vote, get_scores, get_all_votes
+
+init_db()
 
 app = FastAPI(title="Minecraft House Classifier")
 
@@ -20,75 +30,55 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-modele_path = os.path.join(os.path.dirname(__file__), '..', 'model', 'classifier.pkl')
+modele_path = os.path.join(ROOT_DIR, 'model', 'classifier.pkl')
 with open(modele_path, "rb") as f:
     modele = pickle.load(f)
 
-def calculer_scores(features):
-    # features = tableau de 15 valeurs qu'on a calculé dans features.py
-    # On récupère chaque feature par son index
+# Cache en mémoire : on stocke la grille RÉELLE (avant normalisation 32x32x32)
+# pour que le viewer affiche la vraie structure lisible
+grilles_cache = {}
 
-    densite        = features[0]   # % de blocs non-air
-    prop_bois      = features[1]   # % de bois
-    prop_pierre    = features[2]   # % de pierre
-    prop_verre     = features[3]   # % de verre
-    prop_deco      = features[4]   # % de décoration
-    prop_toit      = features[5]   # % de toit
-    hauteur        = features[8]   # hauteur réelle
-    largeur        = features[9]   # largeur réelle
-    profondeur     = features[10]  # profondeur réelle
-    a_un_toit      = features[12]  # 0 ou 1
-    air_interieur  = features[13]  # 0 ou 1
-    diversite      = features[14]  # nombre de familles différentes
 
-    # -----------------------------------------------
-    # SCORE TAILLE (1 à 5)
-    # Basé sur le volume réel de la structure
-    # -----------------------------------------------
+class Vote(BaseModel):
+    filename: str
+    size: int
+    aesthetic: int
+    complexity: int
+
+
+def calculer_scores_auto(features):
+    densite       = features[0]
+    prop_verre    = features[3]
+    prop_deco     = features[4]
+    prop_toit     = features[5]
+    hauteur       = features[8]
+    largeur       = features[9]
+    profondeur    = features[10]
+    a_un_toit     = features[12]
+    air_interieur = features[13]
+    diversite     = features[14]
+
     volume = hauteur * largeur * profondeur
-    if volume < 500:
-        size_score = 1      # très petite cabane
-    elif volume < 2000:
-        size_score = 2      # petite maison
-    elif volume < 5000:
-        size_score = 3      # maison moyenne
-    elif volume < 15000:
-        size_score = 4      # grande maison
-    else:
-        size_score = 5      # manoir / villa énorme
+    if volume < 500:        size_score = 1
+    elif volume < 2000:     size_score = 2
+    elif volume < 5000:     size_score = 3
+    elif volume < 15000:    size_score = 4
+    else:                   size_score = 5
 
-    # -----------------------------------------------
-    # SCORE ESTHÉTIQUE (1 à 5)
-    # Basé sur la diversité des matériaux + verre + déco
-    # -----------------------------------------------
     score_esth = 1
-    if diversite >= 2:
-        score_esth += 1     # au moins 2 familles de blocs
-    if prop_verre > 0.01:
-        score_esth += 1     # a des fenêtres en verre
-    if prop_deco > 0.005:
-        score_esth += 1     # a des décorations
-    if diversite >= 5:
-        score_esth += 1     # palette très variée
+    if diversite >= 2:      score_esth += 1
+    if prop_verre > 0.01:   score_esth += 1
+    if prop_deco > 0.005:   score_esth += 1
+    if diversite >= 5:      score_esth += 1
     aesthetic_score = min(score_esth, 5)
-    # min(x, 5) = on s'assure de ne jamais dépasser 5
 
-    # -----------------------------------------------
-    # SCORE COMPLEXITÉ (1 à 5)
-    # Basé sur le toit, l'intérieur, la densité, les matériaux
-    # -----------------------------------------------
     score_comp = 1
-    if a_un_toit:
-        score_comp += 1     # a un toit détecté
-    if air_interieur:
-        score_comp += 1     # a un espace intérieur
-    if prop_toit > 0.02:
-        score_comp += 1     # toit bien travaillé
-    if densite > 0.15:
-        score_comp += 1     # structure dense = complexe
+    if a_un_toit:           score_comp += 1
+    if air_interieur:       score_comp += 1
+    if prop_toit > 0.02:    score_comp += 1
+    if densite > 0.15:      score_comp += 1
     complexity_score = min(score_comp, 5)
 
-    # Score global = moyenne des 3 scores
     global_score = round((size_score + aesthetic_score + complexity_score) / 3, 1)
 
     return {
@@ -98,15 +88,16 @@ def calculer_scores(features):
         "global": float(global_score)
     }
 
+
 @app.get("/")
 def accueil():
     return {"message": "Minecraft House Classifier API 🏠"}
 
+
 @app.post("/predict")
 async def predict(file: UploadFile = File(...)):
-
     if not (file.filename.endswith('.schem') or file.filename.endswith('.schematic')):
-        return {"error": "Fichier invalide, envoyez un .schem ou .schematic"}
+        return {"error": "Fichier invalide"}
 
     with tempfile.NamedTemporaryFile(delete=False, suffix='.schem') as tmp:
         contenu = await file.read()
@@ -115,6 +106,23 @@ async def predict(file: UploadFile = File(...)):
 
     try:
         grille_brute, palette = lire_schem(chemin_tmp)
+
+        # Grille simplifiée + croppée (taille réelle, pas normalisée)
+        # C'est cette grille qu'on envoie au viewer pour un affichage lisible
+        grille_simplifiee = convertir_grille(grille_brute, palette)
+        grille_croppee = crop_air(grille_simplifiee)
+
+        # On limite à 64x64x64 max pour le viewer (évite les trop grosses structures)
+        MAX = 64
+        h = min(grille_croppee.shape[0], MAX)
+        l = min(grille_croppee.shape[1], MAX)
+        w = min(grille_croppee.shape[2], MAX)
+        grille_viewer = grille_croppee[:h, :l, :w]
+
+        # On stocke dans le cache pour le viewer
+        grilles_cache[file.filename] = grille_viewer.tolist()
+
+        # Pour le modèle IA on utilise le pipeline complet (normalisation 32x32x32)
         grille_propre = pretraiter(grille_brute, palette)
         features = extraire_features(grille_propre)
 
@@ -124,19 +132,57 @@ async def predict(file: UploadFile = File(...)):
         confidence = float(probabilites[prediction])
         is_house = bool(prediction == 1)
 
-        # Si c'est une maison on calcule les scores
         if is_house:
-            scores = calculer_scores(features)
+            scores_auto = calculer_scores_auto(features)
+            scores_humains = get_scores(file.filename)
             return {
                 "is_house": True,
                 "confidence": round(confidence, 2),
-                "scores": scores
+                "filename": file.filename,
+                "scores_auto": scores_auto,
+                "scores_humains": scores_humains
             }
-        else:
-            return {
-                "is_house": False,
-                "confidence": round(confidence, 2)
-            }
+
+        return {
+            "is_house": False,
+            "confidence": round(confidence, 2)
+        }
 
     finally:
         os.unlink(chemin_tmp)
+
+
+@app.post("/vote")
+def voter(vote: Vote):
+    if not all(1 <= v <= 5 for v in [vote.size, vote.aesthetic, vote.complexity]):
+        return {"error": "Les notes doivent être entre 1 et 5"}
+
+    ajouter_vote(vote.filename, vote.size, vote.aesthetic, vote.complexity)
+    scores = get_scores(vote.filename)
+    return {
+        "message": "Vote enregistré !",
+        "scores": scores
+    }
+
+
+@app.get("/scores/{filename}")
+def get_scores_fichier(filename: str):
+    scores = get_scores(filename)
+    if scores:
+        return scores
+    return {"message": "Pas encore de votes pour ce fichier"}
+
+
+@app.get("/gallery")
+def get_gallery():
+    return get_all_votes()
+
+
+@app.get("/preview/{filename}")
+def get_preview(filename: str):
+    if filename not in grilles_cache:
+        return {"error": "Grille non disponible. Réanalyse le fichier d'abord."}
+    return {
+        "filename": filename,
+        "grid": grilles_cache[filename]
+    }

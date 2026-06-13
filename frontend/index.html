@@ -28,7 +28,6 @@
         }
 
         h1 { font-size: 24px; margin-bottom: 8px; color: #ffffff; }
-
         p.subtitle { color: #555; margin-bottom: 30px; font-size: 14px; }
 
         .upload-zone {
@@ -39,12 +38,10 @@
             transition: all 0.3s;
             margin-bottom: 20px;
         }
-
         .upload-zone:hover { border-color: #555; background-color: #1a1a1a; }
         .upload-zone p { color: #555; font-size: 14px; margin-top: 8px; }
 
         #fileInput { display: none; }
-
         #fileName { color: #888; font-size: 14px; margin-bottom: 20px; min-height: 20px; }
 
         button {
@@ -59,7 +56,6 @@
             transition: all 0.3s;
             width: 100%;
         }
-
         button:hover { background-color: #dddddd; }
         button:disabled { background-color: #222; color: #555; cursor: not-allowed; }
 
@@ -84,17 +80,13 @@
             margin-top: 12px;
             overflow: hidden;
         }
-
         .confidence-fill { height: 100%; border-radius: 8px; transition: width 0.5s; }
         .fill-house { background-color: #2ecc71; }
         .fill-not-house { background-color: #e74c3c; }
 
         .loading { display: none; margin-top: 20px; color: #555; font-size: 14px; }
 
-        /* ============================================
-           SECTION SCORES
-        ============================================ */
-
+        /* ============ SCORES AUTO ============ */
         .scores-section {
             margin-top: 20px;
             border-top: 1px solid #222;
@@ -102,9 +94,9 @@
         }
 
         .scores-title {
-            font-size: 14px;
-            color: #888;
-            margin-bottom: 16px;
+            font-size: 13px;
+            color: #666;
+            margin-bottom: 14px;
             text-transform: uppercase;
             letter-spacing: 1px;
         }
@@ -116,36 +108,23 @@
             margin-bottom: 12px;
         }
 
-        .score-label {
-            font-size: 14px;
-            color: #aaa;
-            text-align: left;
-            width: 100px;
-        }
+        .score-label { font-size: 14px; color: #aaa; text-align: left; width: 100px; }
 
-        .stars {
-            display: flex;
-            gap: 4px;
-        }
+        .stars { display: flex; gap: 4px; }
 
         .star {
             font-size: 20px;
             color: #333;
-            /* étoile vide par défaut */
-            transition: color 0.3s;
+            cursor: default;
+            transition: color 0.2s;
         }
+        .star.active { color: #f1c40f; }
 
-        .star.active {
-            color: #f1c40f;
-            /* étoile jaune si active */
-        }
+        .star.clickable { cursor: pointer; }
+        .star.clickable:hover { color: #f39c12; }
+        .star.clickable.active { color: #f1c40f; }
 
-        .score-number {
-            font-size: 14px;
-            color: #555;
-            width: 30px;
-            text-align: right;
-        }
+        .score-number { font-size: 14px; color: #555; width: 30px; text-align: right; }
 
         .global-score {
             margin-top: 16px;
@@ -155,6 +134,60 @@
             font-size: 18px;
             font-weight: bold;
             color: #f1c40f;
+        }
+
+        /* ============ VOTE HUMAIN ============ */
+        .vote-section {
+            margin-top: 24px;
+            border-top: 1px solid #222;
+            padding-top: 20px;
+        }
+
+        .vote-title {
+            font-size: 13px;
+            color: #666;
+            margin-bottom: 6px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .vote-subtitle {
+            font-size: 12px;
+            color: #444;
+            margin-bottom: 16px;
+        }
+
+        .vote-btn {
+            background-color: #1a3a1a;
+            color: #2ecc71;
+            border: 1px solid #2ecc71;
+            padding: 10px 20px;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: bold;
+            cursor: pointer;
+            width: 100%;
+            margin-top: 16px;
+            transition: all 0.3s;
+        }
+        .vote-btn:hover { background-color: #2ecc71; color: #000; }
+        .vote-btn:disabled { background-color: #1a1a1a; color: #444; border-color: #333; cursor: not-allowed; }
+
+        .vote-confirmation {
+            margin-top: 12px;
+            padding: 10px;
+            background-color: #0a2a0a;
+            border: 1px solid #1a5c1a;
+            border-radius: 8px;
+            font-size: 13px;
+            color: #2ecc71;
+            display: none;
+        }
+
+        .nb-votes {
+            font-size: 12px;
+            color: #555;
+            margin-top: 8px;
         }
     </style>
 </head>
@@ -174,7 +207,6 @@
     <div id="fileName">Aucun fichier sélectionné</div>
 
     <button id="analyzeBtn" onclick="analyser()" disabled>Analyser</button>
-
     <div class="loading" id="loading">⏳ Analyse en cours...</div>
 
     <div id="result">
@@ -185,35 +217,91 @@
             <div class="confidence-fill" id="confidenceFill"></div>
         </div>
 
-        <!-- SECTION SCORES - visible uniquement si c'est une maison -->
+        <!-- SCORES AUTO (calculés par l'IA) -->
         <div class="scores-section" id="scoresSection" style="display:none">
-            <div class="scores-title">⭐ Évaluation de la maison</div>
 
-            <div class="score-row">
-                <div class="score-label">Taille</div>
-                <div class="stars" id="starsTaille"></div>
-                <div class="score-number" id="numTaille"></div>
+            <div id="scoresAutoBlock">
+                <div class="scores-title">🤖 Scores automatiques (IA)</div>
+                <div class="score-row">
+                    <div class="score-label">Taille</div>
+                    <div class="stars" id="starsTaille"></div>
+                    <div class="score-number" id="numTaille"></div>
+                </div>
+                <div class="score-row">
+                    <div class="score-label">Esthétique</div>
+                    <div class="stars" id="starsEsthetique"></div>
+                    <div class="score-number" id="numEsthetique"></div>
+                </div>
+                <div class="score-row">
+                    <div class="score-label">Complexité</div>
+                    <div class="stars" id="starsComplexite"></div>
+                    <div class="score-number" id="numComplexite"></div>
+                </div>
+                <div class="global-score" id="globalScore"></div>
             </div>
 
-            <div class="score-row">
-                <div class="score-label">Esthétique</div>
-                <div class="stars" id="starsEsthetique"></div>
-                <div class="score-number" id="numEsthetique"></div>
+            <!-- Scores humains -->
+            <div id="scoresHumainsBlock" style="display:none; margin-top:20px;">
+                <div class="scores-title">👥 Avis de la communauté</div>
+                <div class="score-row">
+                    <div class="score-label">Taille</div>
+                    <div class="stars" id="hStarsTaille"></div>
+                    <div class="score-number" id="hNumTaille"></div>
+                </div>
+                <div class="score-row">
+                    <div class="score-label">Esthétique</div>
+                    <div class="stars" id="hStarsEsthetique"></div>
+                    <div class="score-number" id="hNumEsthetique"></div>
+                </div>
+                <div class="score-row">
+                    <div class="score-label">Complexité</div>
+                    <div class="stars" id="hStarsComplexite"></div>
+                    <div class="score-number" id="hNumComplexite"></div>
+                </div>
+                <div class="global-score" id="hGlobalScore"></div>
+                <div class="nb-votes" id="nbVotes"></div>
             </div>
 
-            <div class="score-row">
-                <div class="score-label">Complexité</div>
-                <div class="stars" id="starsComplexite"></div>
-                <div class="score-number" id="numComplexite"></div>
+            <!-- VOTE HUMAIN -->
+            <div class="vote-section">
+                <div class="vote-title">✍️ Donner ton avis</div>
+                <div class="vote-subtitle">Note cette maison selon tes propres critères</div>
+
+                <div class="score-row">
+                    <div class="score-label">Taille</div>
+                    <div class="stars" id="voteStarsTaille"></div>
+                    <div class="score-number" id="voteNumTaille">-/5</div>
+                </div>
+                <div class="score-row">
+                    <div class="score-label">Esthétique</div>
+                    <div class="stars" id="voteStarsEsthetique"></div>
+                    <div class="score-number" id="voteNumEsthetique">-/5</div>
+                </div>
+                <div class="score-row">
+                    <div class="score-label">Complexité</div>
+                    <div class="stars" id="voteStarsComplexite"></div>
+                    <div class="score-number" id="voteNumComplexite">-/5</div>
+                </div>
+
+                <button class="vote-btn" id="voteBtn" onclick="envoyerVote()" disabled>
+                    ⭐ Envoyer mon vote
+                </button>
+                <div class="vote-confirmation" id="voteConfirmation">
+                    ✅ Vote enregistré ! Merci pour ton avis.
+                </div>
             </div>
 
-            <div class="global-score" id="globalScore"></div>
         </div>
     </div>
 
 </div>
 
 <script>
+    const API_BASE = 'http://127.0.0.1:8000'
+
+    let currentFilename = ''
+    let voteEnCours = { taille: 0, esthetique: 0, complexite: 0 }
+
     function afficherNomFichier() {
         const input = document.getElementById('fileInput')
         const fileName = document.getElementById('fileName')
@@ -240,33 +328,119 @@
         formData.append('file', fichier)
 
         try {
-            const response = await fetch('http://127.0.0.1:8000/predict', {
+            const response = await fetch(`${API_BASE}/predict`, {
                 method: 'POST',
                 body: formData
             })
             const data = await response.json()
             afficherResultat(data)
         } catch (error) {
-            alert('Erreur : impossible de contacter l\'API.')
+            alert('Erreur : impossible de contacter l\'API. Vérifie que le serveur tourne sur http://127.0.0.1:8000')
         } finally {
             loading.style.display = 'none'
             btn.disabled = false
         }
     }
 
-    // Génère les étoiles pour un score donné
     function afficherEtoiles(containerId, score) {
         const container = document.getElementById(containerId)
         container.innerHTML = ''
-        // On crée 5 étoiles
         for (let i = 1; i <= 5; i++) {
             const star = document.createElement('span')
-            star.className = 'star' + (i <= score ? ' active' : '')
-            // active = étoile jaune si i <= score
-            // ex: score=3 → étoiles 1,2,3 jaunes, 4,5 grises
+            star.className = 'star' + (i <= Math.round(score) ? ' active' : '')
             star.textContent = '★'
             container.appendChild(star)
         }
+    }
+
+    function creerEtoilesCliquables(containerId, numId, critere) {
+        const container = document.getElementById(containerId)
+        container.innerHTML = ''
+        for (let i = 1; i <= 5; i++) {
+            const star = document.createElement('span')
+            star.className = 'star clickable'
+            star.textContent = '★'
+            star.dataset.value = i
+
+            star.addEventListener('mouseover', () => survolerEtoile(containerId, i))
+            star.addEventListener('mouseout', () => afficherVoteActuel(containerId, numId, critere))
+            star.addEventListener('click', () => {
+                voteEnCours[critere] = i
+                document.getElementById(numId).textContent = i + '/5'
+                afficherVoteActuel(containerId, numId, critere)
+                verifierVoteComplet()
+            })
+
+            container.appendChild(star)
+        }
+    }
+
+    function survolerEtoile(containerId, valeur) {
+        const stars = document.querySelectorAll(`#${containerId} .star`)
+        stars.forEach((s, idx) => {
+            s.style.color = idx < valeur ? '#f39c12' : '#333'
+        })
+    }
+
+    function afficherVoteActuel(containerId, numId, critere) {
+        const valeur = voteEnCours[critere]
+        const stars = document.querySelectorAll(`#${containerId} .star`)
+        stars.forEach((s, idx) => {
+            s.style.color = idx < valeur ? '#f1c40f' : '#333'
+        })
+    }
+
+    function verifierVoteComplet() {
+        const btn = document.getElementById('voteBtn')
+        const complet = voteEnCours.taille > 0 && voteEnCours.esthetique > 0 && voteEnCours.complexite > 0
+        btn.disabled = !complet
+    }
+
+    async function envoyerVote() {
+        const btn = document.getElementById('voteBtn')
+        btn.disabled = true
+        btn.textContent = '⏳ Envoi...'
+
+        try {
+            const response = await fetch(`${API_BASE}/vote`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    filename: currentFilename,
+                    size: voteEnCours.taille,
+                    aesthetic: voteEnCours.esthetique,
+                    complexity: voteEnCours.complexite
+                })
+            })
+            const data = await response.json()
+
+            document.getElementById('voteConfirmation').style.display = 'block'
+            btn.textContent = '✅ Vote envoyé !'
+
+            if (data.scores) {
+                afficherScoresHumains(data.scores)
+            }
+
+        } catch (error) {
+            btn.disabled = false
+            btn.textContent = '⭐ Envoyer mon vote'
+            alert('Erreur lors de l\'envoi du vote.')
+        }
+    }
+
+    function afficherScoresHumains(scores) {
+        const block = document.getElementById('scoresHumainsBlock')
+        block.style.display = 'block'
+
+        afficherEtoiles('hStarsTaille', scores.size)
+        afficherEtoiles('hStarsEsthetique', scores.aesthetic)
+        afficherEtoiles('hStarsComplexite', scores.complexity)
+
+        document.getElementById('hNumTaille').textContent = scores.size + '/5'
+        document.getElementById('hNumEsthetique').textContent = scores.aesthetic + '/5'
+        document.getElementById('hNumComplexite').textContent = scores.complexity + '/5'
+        document.getElementById('hGlobalScore').textContent = '⭐ Moyenne communauté : ' + scores.global + ' / 5'
+        document.getElementById('nbVotes').textContent = scores.nb_votes + ' vote(s) au total'
     }
 
     function afficherResultat(data) {
@@ -287,21 +461,30 @@
             title.style.color = '#2ecc71'
             fill.className = 'confidence-fill fill-house'
 
-            // On affiche la section scores
+            currentFilename = data.filename
+            voteEnCours = { taille: 0, esthetique: 0, complexite: 0 }
+            document.getElementById('voteConfirmation').style.display = 'none'
+            document.getElementById('voteBtn').textContent = '⭐ Envoyer mon vote'
+            document.getElementById('voteBtn').disabled = true
+
             scoresSection.style.display = 'block'
+            afficherEtoiles('starsTaille', data.scores_auto.size)
+            afficherEtoiles('starsEsthetique', data.scores_auto.aesthetic)
+            afficherEtoiles('starsComplexite', data.scores_auto.complexity)
+            document.getElementById('numTaille').textContent = data.scores_auto.size + '/5'
+            document.getElementById('numEsthetique').textContent = data.scores_auto.aesthetic + '/5'
+            document.getElementById('numComplexite').textContent = data.scores_auto.complexity + '/5'
+            document.getElementById('globalScore').textContent = '⭐ Score IA : ' + data.scores_auto.global + ' / 5'
 
-            // On affiche les étoiles pour chaque critère
-            afficherEtoiles('starsTaille', data.scores.size)
-            afficherEtoiles('starsEsthetique', data.scores.aesthetic)
-            afficherEtoiles('starsComplexite', data.scores.complexity)
+            if (data.scores_humains) {
+                afficherScoresHumains(data.scores_humains)
+            } else {
+                document.getElementById('scoresHumainsBlock').style.display = 'none'
+            }
 
-            // On affiche les numéros
-            document.getElementById('numTaille').textContent = data.scores.size + '/5'
-            document.getElementById('numEsthetique').textContent = data.scores.aesthetic + '/5'
-            document.getElementById('numComplexite').textContent = data.scores.complexity + '/5'
-
-            // Score global
-            document.getElementById('globalScore').textContent = '⭐ Score global : ' + data.scores.global + ' / 5'
+            creerEtoilesCliquables('voteStarsTaille', 'voteNumTaille', 'taille')
+            creerEtoilesCliquables('voteStarsEsthetique', 'voteNumEsthetique', 'esthetique')
+            creerEtoilesCliquables('voteStarsComplexite', 'voteNumComplexite', 'complexite')
 
         } else {
             result.className = 'result-not-house'
@@ -310,7 +493,6 @@
             title.style.color = '#e74c3c'
             fill.className = 'confidence-fill fill-not-house'
             scoresSection.style.display = 'none'
-            // On cache la section scores si c'est pas une maison
         }
 
         confidence.textContent = `Confiance : ${pourcentage}%`

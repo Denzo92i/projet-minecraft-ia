@@ -1,0 +1,691 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Schematic Viewer 3D</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #0a0a0f;
+    color: #e0e0e0;
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  #header {
+    padding: 10px 20px;
+    background: #111118;
+    border-bottom: 1px solid #222230;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    flex-shrink: 0;
+  }
+  #header h1 { font-size: 14px; font-weight: 600; color: #8bc34a; letter-spacing: 0.5px; }
+  #filename-display { font-size: 12px; color: #555; flex: 1; }
+  #filename-display span { color: #aaa; font-family: monospace; }
+
+  #controls-bar {
+    padding: 7px 16px;
+    background: #0e0e18;
+    border-bottom: 1px solid #1a1a28;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-shrink: 0;
+    flex-wrap: wrap;
+  }
+  .ctrl-group { display: flex; align-items: center; gap: 6px; }
+  .ctrl-sep { width: 1px; height: 20px; background: #222230; margin: 0 4px; }
+  .ctrl-label { font-size: 11px; color: #444; text-transform: uppercase; letter-spacing: 0.8px; }
+
+  button {
+    background: #1a1a28;
+    color: #999;
+    border: 1px solid #252535;
+    padding: 4px 11px;
+    border-radius: 4px;
+    font-size: 11px;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  button:hover { background: #252535; color: #fff; border-color: #333348; }
+  button.active { background: #1e2e12; color: #8bc34a; border-color: #3a5520; }
+
+  input[type=range] { width: 90px; accent-color: #8bc34a; cursor: pointer; }
+  .val-display { font-size: 11px; color: #666; min-width: 28px; font-family: monospace; }
+
+  #canvas-container { flex: 1; position: relative; overflow: hidden; }
+  #canvas-container canvas { display: block; }
+
+  /* Overlay chargement */
+  #overlay {
+    position: absolute; inset: 0;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    background: rgba(10,10,15,0.95); z-index: 10;
+  }
+  #overlay.hidden { display: none; }
+  .overlay-icon { font-size: 44px; margin-bottom: 14px; }
+  #overlay h2 { font-size: 17px; color: #8bc34a; margin-bottom: 6px; }
+  #overlay p { font-size: 13px; color: #555; margin-bottom: 22px; text-align: center; max-width: 320px; line-height: 1.6; }
+
+  #load-form { display: flex; gap: 8px; align-items: center; }
+  #filename-input {
+    background: #1a1a28; border: 1px solid #2a2a3a;
+    color: #ccc; padding: 7px 13px; border-radius: 4px;
+    font-size: 13px; font-family: monospace; width: 270px;
+    outline: none; transition: border-color 0.15s;
+  }
+  #filename-input:focus { border-color: #3a5520; }
+  #filename-input::placeholder { color: #333; }
+  #load-btn {
+    background: #1e2e12; color: #8bc34a; border-color: #3a5520;
+    padding: 7px 16px; font-size: 13px;
+  }
+  #load-btn:hover { background: #253818; }
+
+  /* Légende */
+  #legend {
+    position: absolute; bottom: 14px; right: 14px;
+    background: rgba(10,10,15,0.92); border: 1px solid #1a1a28;
+    border-radius: 6px; padding: 10px 13px; font-size: 11px;
+    backdrop-filter: blur(4px);
+  }
+  .legend-title { color: #444; text-transform: uppercase; letter-spacing: 0.8px; font-size: 9px; margin-bottom: 7px; }
+  .legend-item { display: flex; align-items: center; gap: 7px; margin-bottom: 3px; color: #777; }
+  .legend-color {
+    width: 11px; height: 11px; border-radius: 2px; flex-shrink: 0;
+    box-shadow: inset 0 -2px 0 rgba(0,0,0,0.35);
+  }
+  .legend-item.active { color: #ccc; }
+
+  /* Stats */
+  #stats-bar {
+    position: absolute; top: 10px; left: 10px;
+    background: rgba(10,10,15,0.85); border: 1px solid #1a1a28;
+    border-radius: 6px; padding: 7px 11px; font-size: 11px;
+    color: #555; line-height: 1.9; display: none;
+    backdrop-filter: blur(4px);
+  }
+  #stats-bar span { color: #8bc34a; font-family: monospace; }
+
+  #hint {
+    position: absolute; bottom: 14px; left: 50%; transform: translateX(-50%);
+    font-size: 10px; color: #282830; pointer-events: none; white-space: nowrap;
+  }
+
+  /* Spinner */
+  #loading-spinner { display: none; flex-direction: column; align-items: center; gap: 10px; }
+  #loading-spinner.visible { display: flex; }
+  .spinner {
+    width: 28px; height: 28px; border: 2px solid #1a1a28;
+    border-top-color: #8bc34a; border-radius: 50%;
+    animation: spin 0.65s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  #error-msg { color: #c0392b; font-size: 12px; margin-top: 10px; display: none; }
+</style>
+</head>
+<body>
+
+<div id="header">
+  <h1>⬛ Schematic Viewer</h1>
+  <div id="filename-display">Aucun fichier chargé</div>
+</div>
+
+<div id="controls-bar">
+  <div class="ctrl-group">
+    <span class="ctrl-label">Vue</span>
+    <button onclick="resetCamera()">Reset</button>
+    <button onclick="topView()">Dessus</button>
+    <button onclick="frontView()">Face</button>
+    <button onclick="sideView()">Côté</button>
+  </div>
+  <div class="ctrl-sep"></div>
+  <div class="ctrl-group">
+    <span class="ctrl-label">Tranche Y</span>
+    <input type="range" id="slice-y" min="0" max="63" value="63" oninput="updateSlice()" />
+    <span class="val-display" id="slice-val">63</span>
+    <span class="val-display" id="slice-max" style="color:#333">/63</span>
+  </div>
+  <div class="ctrl-sep"></div>
+  <div class="ctrl-group">
+    <span class="ctrl-label">Zoom</span>
+    <input type="range" id="block-size" min="2" max="24" value="10" oninput="rebuildMesh()" />
+    <span class="val-display" id="size-val">10</span>
+  </div>
+  <div class="ctrl-sep"></div>
+  <div class="ctrl-group">
+    <button id="btn-ao" onclick="toggleAO()" class="active">Ombres</button>
+    <button id="btn-grid" onclick="toggleGrid()" class="active">Grille</button>
+    <button id="btn-wire" onclick="toggleWire()">Fil de fer</button>
+  </div>
+</div>
+
+<div id="canvas-container">
+  <div id="overlay">
+    <div class="overlay-icon">🏠</div>
+    <h2>Visualiseur 3D</h2>
+    <p>Analyse d'abord un schematic depuis l'interface principale, puis entre son nom exact ici pour voir sa structure en 3D.</p>
+    <div id="load-form">
+      <input type="text" id="filename-input" placeholder="maison.schem" />
+      <button id="load-btn" onclick="loadSchematic()">Charger ▶</button>
+    </div>
+    <div id="loading-spinner">
+      <div class="spinner"></div>
+      <span style="font-size:12px;color:#444">Chargement de la grille...</span>
+    </div>
+    <div id="error-msg"></div>
+  </div>
+
+  <div id="stats-bar">
+    Blocs: <span id="stat-blocks">0</span> &nbsp;|&nbsp;
+    Dimensions: <span id="stat-dims">—</span> &nbsp;|&nbsp;
+    Familles: <span id="stat-families">0</span>
+  </div>
+
+  <div id="legend">
+    <div class="legend-title">Familles de blocs</div>
+    <div class="legend-item" data-fam="1"><div class="legend-color" style="background:#a0785a"></div> Bois</div>
+    <div class="legend-item" data-fam="2"><div class="legend-color" style="background:#8a9aa8"></div> Pierre</div>
+    <div class="legend-item" data-fam="3"><div class="legend-color" style="background:#7dd6e8"></div> Verre</div>
+    <div class="legend-item" data-fam="4"><div class="legend-color" style="background:#c47acc"></div> Décoration</div>
+    <div class="legend-item" data-fam="5"><div class="legend-color" style="background:#bf6060"></div> Toit</div>
+    <div class="legend-item" data-fam="6"><div class="legend-color" style="background:#5daa5d"></div> Végétation</div>
+    <div class="legend-item" data-fam="7"><div class="legend-color" style="background:#e07c3a"></div> Redstone</div>
+  </div>
+
+  <div id="hint">🖱 Clic gauche : rotation &nbsp;|&nbsp; Molette : zoom &nbsp;|&nbsp; Clic droit : déplacer</div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+const API_BASE = 'http://127.0.0.1:8000';
+
+// Couleurs Minecraft-fidèles par famille
+const FAMILY_COLORS = {
+  1: { top: 0xb8926a, side: 0xa07850, bottom: 0x8a6640 },  // bois
+  2: { top: 0x9aacba, side: 0x8a9aa8, bottom: 0x7a8a96 },  // pierre
+  3: { top: 0x9de8f5, side: 0x7dd6e8, bottom: 0x60c4d8 },  // verre
+  4: { top: 0xd888e0, side: 0xc47acc, bottom: 0xae68b4 },  // décoration
+  5: { top: 0xcc6868, side: 0xbf6060, bottom: 0xa85050 },  // toit
+  6: { top: 0x72cc72, side: 0x5daa5d, bottom: 0x4a8e4a },  // végétation
+  7: { top: 0xf09050, side: 0xe07c3a, bottom: 0xcc6828 },  // redstone
+};
+
+const FAMILY_FLAT = {
+  1: 0xa07850,
+  2: 0x8a9aa8,
+  3: 0x7dd6e8,
+  4: 0xc47acc,
+  5: 0xbf6060,
+  6: 0x5daa5d,
+  7: 0xe07c3a,
+};
+
+let scene, camera, renderer, gridHelper;
+let voxelGroup = null;
+let currentGrid = null;
+let showGrid = true;
+let showWire = false;
+let useAO = true;
+let gridDims = { h: 32, l: 32, w: 32 };
+
+// -------------------------------------------------------
+// Init Three.js
+// -------------------------------------------------------
+function initThree() {
+  scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x0a0a0f);
+  // Brume légère pour la profondeur
+  scene.fog = new THREE.FogExp2(0x0a0a0f, 0.0004);
+
+  const container = document.getElementById('canvas-container');
+  const w = container.clientWidth, h = container.clientHeight;
+
+  camera = new THREE.PerspectiveCamera(52, w / h, 0.1, 8000);
+  camera.position.set(200, 200, 300);
+
+  renderer = new THREE.WebGLRenderer({ antialias: true });
+  renderer.setSize(w, h);
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.shadowMap.enabled = false;
+  container.appendChild(renderer.domElement);
+
+  // Éclairage réaliste style Minecraft
+  const ambient = new THREE.AmbientLight(0xd0e8ff, 0.45);
+  scene.add(ambient);
+
+  // Lumière principale (soleil)
+  const sun = new THREE.DirectionalLight(0xfff5e0, 1.0);
+  sun.position.set(1, 2, 1.5);
+  scene.add(sun);
+
+  // Lumière de remplissage (ciel)
+  const sky = new THREE.DirectionalLight(0xc0d8ff, 0.35);
+  sky.position.set(-1, 1, -1);
+  scene.add(sky);
+
+  // Lumière basse (rebond sol)
+  const bounce = new THREE.DirectionalLight(0x604030, 0.15);
+  bounce.position.set(0, -1, 0);
+  scene.add(bounce);
+
+  gridHelper = new THREE.GridHelper(4000, 200, 0x151520, 0x0e0e18);
+  scene.add(gridHelper);
+
+  setupControls();
+  animate();
+
+  window.addEventListener('resize', () => {
+    const w = container.clientWidth, h = container.clientHeight;
+    camera.aspect = w / h;
+    camera.updateProjectionMatrix();
+    renderer.setSize(w, h);
+  });
+}
+
+// -------------------------------------------------------
+// Contrôles orbitaux
+// -------------------------------------------------------
+let isDown = false, btn = 0;
+let lastMouse = { x: 0, y: 0 };
+let sph = { theta: Math.PI / 4, phi: Math.PI / 3.5, r: 400 };
+let target = new THREE.Vector3(0, 0, 0);
+
+function setupControls() {
+  const el = renderer.domElement;
+  el.addEventListener('mousedown', e => {
+    isDown = true; btn = e.button;
+    lastMouse = { x: e.clientX, y: e.clientY };
+  });
+  el.addEventListener('mousemove', e => {
+    if (!isDown) return;
+    const dx = e.clientX - lastMouse.x, dy = e.clientY - lastMouse.y;
+    lastMouse = { x: e.clientX, y: e.clientY };
+    if (btn === 0) {
+      sph.theta -= dx * 0.006;
+      sph.phi = Math.max(0.05, Math.min(Math.PI - 0.05, sph.phi - dy * 0.006));
+    } else if (btn === 2) {
+      const right = new THREE.Vector3();
+      right.crossVectors(camera.getWorldDirection(new THREE.Vector3()), camera.up).normalize();
+      target.addScaledVector(right, -dx * 0.15 * sph.r / 200);
+      target.addScaledVector(camera.up, dy * 0.15 * sph.r / 200);
+    }
+    updateCamera();
+  });
+  el.addEventListener('mouseup', () => isDown = false);
+  el.addEventListener('mouseleave', () => isDown = false);
+  el.addEventListener('wheel', e => {
+    sph.r = Math.max(15, Math.min(5000, sph.r * (1 + e.deltaY * 0.001)));
+    updateCamera();
+  });
+  el.addEventListener('contextmenu', e => e.preventDefault());
+  updateCamera();
+}
+
+function updateCamera() {
+  const x = sph.r * Math.sin(sph.phi) * Math.sin(sph.theta);
+  const y = sph.r * Math.cos(sph.phi);
+  const z = sph.r * Math.sin(sph.phi) * Math.cos(sph.theta);
+  camera.position.set(target.x + x, target.y + y, target.z + z);
+  camera.lookAt(target);
+}
+
+function resetCamera() {
+  const bs = parseInt(document.getElementById('block-size').value);
+  const cx = (gridDims.w / 2) * bs;
+  const cy = (gridDims.h / 2) * bs;
+  const cz = (gridDims.l / 2) * bs;
+  target.set(cx, cy, cz);
+  const size = Math.max(gridDims.w, gridDims.h, gridDims.l) * bs;
+  sph = { theta: Math.PI / 4, phi: Math.PI / 3.2, r: size * 2.2 };
+  updateCamera();
+}
+function topView() {
+  const bs = parseInt(document.getElementById('block-size').value);
+  target.set((gridDims.w/2)*bs, (gridDims.h/2)*bs, (gridDims.l/2)*bs);
+  sph.phi = 0.06; sph.theta = 0;
+  sph.r = Math.max(gridDims.w, gridDims.l) * bs * 2;
+  updateCamera();
+}
+function frontView() {
+  const bs = parseInt(document.getElementById('block-size').value);
+  target.set((gridDims.w/2)*bs, (gridDims.h/2)*bs, (gridDims.l/2)*bs);
+  sph.phi = Math.PI / 2; sph.theta = 0;
+  sph.r = Math.max(gridDims.w, gridDims.h) * bs * 2.5;
+  updateCamera();
+}
+function sideView() {
+  const bs = parseInt(document.getElementById('block-size').value);
+  target.set((gridDims.w/2)*bs, (gridDims.h/2)*bs, (gridDims.l/2)*bs);
+  sph.phi = Math.PI / 2; sph.theta = Math.PI / 2;
+  sph.r = Math.max(gridDims.l, gridDims.h) * bs * 2.5;
+  updateCamera();
+}
+
+function animate() {
+  requestAnimationFrame(animate);
+  renderer.render(scene, camera);
+}
+
+// -------------------------------------------------------
+// Construction du mesh avec faces cachées supprimées + AO
+// -------------------------------------------------------
+function isOpaque(grid, y, z, x, H, L, W) {
+  if (y < 0 || y >= H || z < 0 || z >= L || x < 0 || x >= W) return false;
+  return grid[y][z][x] !== 0;
+}
+
+function buildVoxelMesh(grid, sliceY) {
+  // Nettoyage
+  if (voxelGroup) {
+    scene.remove(voxelGroup);
+    voxelGroup.traverse(obj => {
+      if (obj.geometry) obj.geometry.dispose();
+      if (obj.material) obj.material.dispose();
+    });
+    voxelGroup = null;
+  }
+
+  const bs = parseInt(document.getElementById('block-size').value);
+  const H = grid.length;
+  const L = grid[0].length;
+  const W = grid[0][0].length;
+  const maxY = Math.min(sliceY, H - 1);
+
+  voxelGroup = new THREE.Group();
+
+  if (showWire) {
+    // Mode wireframe : InstancedMesh simple par famille
+    const groups = {};
+    for (let y = 0; y <= maxY; y++)
+      for (let z = 0; z < L; z++)
+        for (let x = 0; x < W; x++) {
+          const f = grid[y][z][x];
+          if (!f) continue;
+          if (!groups[f]) groups[f] = [];
+          groups[f].push(x, y, z);
+        }
+
+    const wGeo = new THREE.BoxGeometry(bs * 0.95, bs * 0.95, bs * 0.95);
+    for (const [fam, pos] of Object.entries(groups)) {
+      const count = pos.length / 3;
+      const mat = new THREE.MeshBasicMaterial({
+        color: FAMILY_FLAT[fam] || 0x888888,
+        wireframe: true,
+      });
+      const mesh = new THREE.InstancedMesh(wGeo, mat, count);
+      const dummy = new THREE.Object3D();
+      for (let i = 0; i < count; i++) {
+        dummy.position.set(pos[i*3]*bs, pos[i*3+1]*bs, pos[i*3+2]*bs);
+        dummy.updateMatrix();
+        mesh.setMatrixAt(i, dummy.matrix);
+      }
+      mesh.instanceMatrix.needsUpdate = true;
+      voxelGroup.add(mesh);
+    }
+    scene.add(voxelGroup);
+    gridHelper.position.y = -bs * 0.5;
+    return;
+  }
+
+  // Mode normal : BufferGeometry avec faces visibles seulement + AO
+  // On construit une geometry par famille de couleur
+  const famGeoms = {};
+
+  // Définition des 6 faces d'un cube
+  // [direction normale, vertices offset, uv, brightnessFactor]
+  const FACES = [
+    // +Y (dessus) — le plus lumineux
+    { dir: [0,1,0], verts: [[0,1,0],[1,1,0],[1,1,1],[0,1,1]], bright: 1.0 },
+    // -Y (dessous) — le plus sombre
+    { dir: [0,-1,0], verts: [[0,0,1],[1,0,1],[1,0,0],[0,0,0]], bright: 0.55 },
+    // +Z (face avant)
+    { dir: [0,0,1], verts: [[0,0,1],[1,0,1],[1,1,1],[0,1,1]], bright: 0.80 },
+    // -Z (face arrière)
+    { dir: [0,0,-1], verts: [[1,0,0],[0,0,0],[0,1,0],[1,1,0]], bright: 0.75 },
+    // +X (droite)
+    { dir: [1,0,0], verts: [[1,0,1],[1,0,0],[1,1,0],[1,1,1]], bright: 0.90 },
+    // -X (gauche)
+    { dir: [-1,0,0], verts: [[0,0,0],[0,0,1],[0,1,1],[0,1,0]], bright: 0.85 },
+  ];
+
+  for (let y = 0; y <= maxY; y++) {
+    for (let z = 0; z < L; z++) {
+      for (let x = 0; x < W; x++) {
+        const fam = grid[y][z][x];
+        if (!fam) continue;
+
+        for (const face of FACES) {
+          const [dx, dy, dz] = face.dir;
+          // Saut si le voisin est opaque (face cachée)
+          if (isOpaque(grid, y+dy, z+dz, x+dx, H, L, W)) continue;
+
+          if (!famGeoms[fam]) famGeoms[fam] = { pos: [], col: [], idx: [], vtxCount: 0 };
+          const g = famGeoms[fam];
+
+          // Couleur de base de la famille selon la face
+          const colors = FAMILY_COLORS[fam] || { top: 0x888888, side: 0x777777, bottom: 0x666666 };
+          let baseColor;
+          if (dy === 1) baseColor = colors.top;
+          else if (dy === -1) baseColor = colors.bottom;
+          else baseColor = colors.side;
+
+          const br = face.bright;
+          const r = ((baseColor >> 16) & 0xff) / 255 * br;
+          const gv = ((baseColor >> 8) & 0xff) / 255 * br;
+          const b = (baseColor & 0xff) / 255 * br;
+
+          // Ambient occlusion simple : assombrit les coins
+          const aoFactor = useAO ? computeAO(grid, x, y, z, face.dir, H, L, W) : [1,1,1,1];
+
+          const base = g.vtxCount;
+          for (let vi = 0; vi < 4; vi++) {
+            const [vx, vy, vz] = face.verts[vi];
+            g.pos.push((x + vx) * bs, (y + vy) * bs, (z + vz) * bs);
+            const ao = aoFactor[vi];
+            g.col.push(r * ao, gv * ao, b * ao);
+          }
+          // 2 triangles par face (quad)
+          g.idx.push(base, base+1, base+2, base, base+2, base+3);
+          g.vtxCount += 4;
+        }
+      }
+    }
+  }
+
+  // Créer une InstancedMesh par famille
+  for (const [fam, g] of Object.entries(famGeoms)) {
+    if (g.pos.length === 0) continue;
+
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(g.pos, 3));
+    geo.setAttribute('color', new THREE.Float32BufferAttribute(g.col, 3));
+    geo.setIndex(g.idx);
+    geo.computeVertexNormals();
+
+    const mat = new THREE.MeshLambertMaterial({
+      vertexColors: true,
+    });
+
+    const mesh = new THREE.Mesh(geo, mat);
+    voxelGroup.add(mesh);
+  }
+
+  scene.add(voxelGroup);
+  gridHelper.position.y = -bs * 0.5;
+
+  // Mise à jour de la légende : highlight les familles présentes
+  updateLegend(grid, maxY, H, L, W);
+}
+
+// AO simple : compte les voisins solides autour du coin du vertex
+function computeAO(grid, x, y, z, dir, H, L, W) {
+  const [dx, dy, dz] = dir;
+  // 4 coins du quad, on calcule l'AO de chaque coin
+  const aoValues = [1, 1, 1, 1];
+  const aoStrength = 0.18;
+
+  // Directions tangentes à la face
+  let t1, t2;
+  if (dy !== 0) { t1 = [1,0,0]; t2 = [0,0,1]; }
+  else if (dx !== 0) { t1 = [0,1,0]; t2 = [0,0,1]; }
+  else { t1 = [1,0,0]; t2 = [0,1,0]; }
+
+  for (let ci = 0; ci < 4; ci++) {
+    const s1 = (ci === 1 || ci === 2) ? 1 : -1;
+    const s2 = (ci === 2 || ci === 3) ? 1 : -1;
+    let blocked = 0;
+
+    const nx = x + dx + t1[0]*s1;
+    const ny = y + dy + t1[1]*s1;
+    const nz = z + dz + t1[2]*s1;
+    if (isOpaque(grid, ny, nz, nx, H, L, W)) blocked++;
+
+    const mx = x + dx + t2[0]*s2;
+    const my = y + dy + t2[1]*s2;
+    const mz = z + dz + t2[2]*s2;
+    if (isOpaque(grid, my, mz, mx, H, L, W)) blocked++;
+
+    if (blocked > 0) {
+      const corner_x = x + dx + t1[0]*s1 + t2[0]*s2;
+      const corner_y = y + dy + t1[1]*s1 + t2[1]*s2;
+      const corner_z = z + dz + t1[2]*s1 + t2[2]*s2;
+      if (isOpaque(grid, corner_y, corner_z, corner_x, H, L, W)) blocked++;
+    }
+
+    aoValues[ci] = 1.0 - blocked * aoStrength;
+  }
+  return aoValues;
+}
+
+// Met à jour la légende pour montrer les familles présentes
+function updateLegend(grid, maxY, H, L, W) {
+  const presentFams = new Set();
+  for (let y = 0; y <= maxY; y++)
+    for (let z = 0; z < L; z++)
+      for (let x = 0; x < W; x++) {
+        const f = grid[y][z][x];
+        if (f) presentFams.add(f);
+      }
+
+  document.querySelectorAll('.legend-item[data-fam]').forEach(el => {
+    const fam = parseInt(el.dataset.fam);
+    el.classList.toggle('active', presentFams.has(fam));
+    el.style.opacity = presentFams.has(fam) ? '1' : '0.3';
+  });
+}
+
+function updateSlice() {
+  const val = parseInt(document.getElementById('slice-y').value);
+  document.getElementById('slice-val').textContent = val;
+  if (currentGrid) buildVoxelMesh(currentGrid, val);
+}
+
+function rebuildMesh() {
+  const val = parseInt(document.getElementById('block-size').value);
+  document.getElementById('size-val').textContent = val;
+  if (currentGrid) {
+    const slice = parseInt(document.getElementById('slice-y').value);
+    buildVoxelMesh(currentGrid, slice);
+    resetCamera();
+  }
+}
+
+function toggleAO() {
+  useAO = !useAO;
+  document.getElementById('btn-ao').classList.toggle('active', useAO);
+  if (currentGrid) rebuildMesh();
+}
+function toggleGrid() {
+  showGrid = !showGrid;
+  gridHelper.visible = showGrid;
+  document.getElementById('btn-grid').classList.toggle('active', showGrid);
+}
+function toggleWire() {
+  showWire = !showWire;
+  document.getElementById('btn-wire').classList.toggle('active', showWire);
+  if (currentGrid) rebuildMesh();
+}
+
+// -------------------------------------------------------
+// Chargement depuis l'API
+// -------------------------------------------------------
+async function loadSchematic() {
+  const filename = document.getElementById('filename-input').value.trim();
+  if (!filename) return;
+
+  document.getElementById('load-form').style.display = 'none';
+  document.getElementById('loading-spinner').classList.add('visible');
+  document.getElementById('error-msg').style.display = 'none';
+
+  try {
+    const res = await fetch(`${API_BASE}/preview/${encodeURIComponent(filename)}`);
+    const data = await res.json();
+
+    if (data.error) { showError(data.error); return; }
+
+    currentGrid = data.grid;
+    const H = currentGrid.length;
+    const L = currentGrid[0].length;
+    const W = currentGrid[0][0].length;
+    gridDims = { h: H, l: L, w: W };
+
+    // Taille de bloc auto adaptée à la structure
+    const maxDim = Math.max(H, L, W);
+    let autoBS = Math.max(2, Math.min(22, Math.floor(320 / maxDim)));
+    document.getElementById('block-size').value = autoBS;
+    document.getElementById('size-val').textContent = autoBS;
+
+    // Slider Y adapté
+    document.getElementById('slice-y').max = H - 1;
+    document.getElementById('slice-y').value = H - 1;
+    document.getElementById('slice-val').textContent = H - 1;
+    document.getElementById('slice-max').textContent = '/' + (H - 1);
+
+    // Stats
+    let blockCount = 0;
+    const families = new Set();
+    for (let y = 0; y < H; y++)
+      for (let z = 0; z < L; z++)
+        for (let x = 0; x < W; x++) {
+          const f = currentGrid[y][z][x];
+          if (f !== 0) { blockCount++; families.add(f); }
+        }
+
+    document.getElementById('stat-blocks').textContent = blockCount.toLocaleString();
+    document.getElementById('stat-dims').textContent = `${W}×${H}×${L}`;
+    document.getElementById('stat-families').textContent = families.size;
+    document.getElementById('stats-bar').style.display = 'block';
+
+    buildVoxelMesh(currentGrid, H - 1);
+    document.getElementById('filename-display').innerHTML = `Schematic : <span>${filename}</span>`;
+    document.getElementById('overlay').classList.add('hidden');
+    resetCamera();
+
+  } catch (err) {
+    showError("Impossible de contacter l'API. Lance le backend d'abord (port 8000).");
+  }
+}
+
+function showError(msg) {
+  document.getElementById('loading-spinner').classList.remove('visible');
+  document.getElementById('load-form').style.display = 'flex';
+  const el = document.getElementById('error-msg');
+  el.textContent = '⚠ ' + msg;
+  el.style.display = 'block';
+}
+
+document.getElementById('filename-input').addEventListener('keydown', e => {
+  if (e.key === 'Enter') loadSchematic();
+});
+
+initThree();
+</script>
+</body>
+</html>
