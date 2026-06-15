@@ -1,0 +1,14 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.ipynb_checkpoints/
+
+# Environnement
+.env
+
+# Fichiers temporaires de l'API
+tmp_*
+
+# Logs
+*.log

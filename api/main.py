@@ -1,188 +1,272 @@
-from fastapi import FastAPI, UploadFile, File
+# Point d'entrée principal de l'API FastAPI
+# Gère la classification de fichiers .schem/.schematic via un modèle Random Forest
+
+from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-import pickle
 import numpy as np
-import sys
+import pickle
 import os
-import tempfile
+import logging
 
-ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-API_DIR = os.path.join(ROOT_DIR, 'api')
-PARSING_DIR = os.path.join(ROOT_DIR, 'parsing')
+from parsing.parser import lire_schem
+from parsing.preprocessor import pretraiter
+from parsing.features import extraire_features
 
-sys.path.insert(0, API_DIR)
-sys.path.insert(0, PARSING_DIR)
+# Configuration du logger pour tracer les erreurs sans crasher le serveur
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
-from parser import lire_schem
-from preprocessor import pretraiter, convertir_grille, crop_air
-from features import extraire_features
-from database import init_db, ajouter_vote, get_scores, get_all_votes
+app = FastAPI(
+    title="Minecraft Schematic AI Classifier",
+    description="Classifie des structures Minecraft (.schem/.schematic) et génère des scores esthétiques.",
+    version="1.0.0",
+)
 
-init_db()
-
-app = FastAPI(title="Minecraft House Classifier")
-
+# Middleware CORS : autorise le frontend (même cross-origin) à appeler l'API
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-modele_path = os.path.join(ROOT_DIR, 'model', 'classifier.pkl')
-with open(modele_path, "rb") as f:
-    modele = pickle.load(f)
+# =========================
+# CHARGEMENT DU MODÈLE
+# =========================
 
-# Cache en mémoire : on stocke la grille RÉELLE (avant normalisation 32x32x32)
-# pour que le viewer affiche la vraie structure lisible
-grilles_cache = {}
+MODEL_PATH = "model/classifier.pkl"
 
+# Chargement au démarrage du serveur (une seule fois, pas à chaque requête)
+if os.path.exists(MODEL_PATH):
+    with open(MODEL_PATH, "rb") as f:
+        model = pickle.load(f)
+    logger.info("✅ Modèle chargé depuis %s", MODEL_PATH)
+else:
+    model = None
+    logger.warning("⚠️ Modèle non trouvé à %s — /predict retournera une erreur", MODEL_PATH)
+
+# Base de données en mémoire pour stocker les votes utilisateurs
+# (réinitialisée au redémarrage du serveur — suffisant pour un projet de démonstration)
+votes_db: dict = {}
+
+
+# =========================
+# SCHÉMAS PYDANTIC
+# =========================
 
 class Vote(BaseModel):
+    """Corps de la requête POST /vote"""
     filename: str
-    size: int
-    aesthetic: int
-    complexity: int
+    size: int       # Note de 1 à 5
+    aesthetic: int  # Note de 1 à 5
+    complexity: int # Note de 1 à 5
 
 
-def calculer_scores_auto(features):
-    densite       = features[0]
-    prop_verre    = features[3]
-    prop_deco     = features[4]
-    prop_toit     = features[5]
-    hauteur       = features[8]
-    largeur       = features[9]
-    profondeur    = features[10]
-    a_un_toit     = features[12]
-    air_interieur = features[13]
-    diversite     = features[14]
+# =========================
+# HELPERS
+# =========================
 
-    volume = hauteur * largeur * profondeur
-    if volume < 500:        size_score = 1
-    elif volume < 2000:     size_score = 2
-    elif volume < 5000:     size_score = 3
-    elif volume < 15000:    size_score = 4
-    else:                   size_score = 5
+def compute_ui_scores(grid: np.ndarray) -> dict:
+    """
+    Calcule les scores automatiques à partir de la grille voxel normalisée.
 
-    score_esth = 1
-    if diversite >= 2:      score_esth += 1
-    if prop_verre > 0.01:   score_esth += 1
-    if prop_deco > 0.005:   score_esth += 1
-    if diversite >= 5:      score_esth += 1
-    aesthetic_score = min(score_esth, 5)
+    La densité brute d'un build Minecraft est très faible (souvent < 5%)
+    car la majorité de la grille est de l'air. On applique un facteur x15
+    pour ramener la plage utile [0, ~0.2] vers [0, 1] avant de scorer.
 
-    score_comp = 1
-    if a_un_toit:           score_comp += 1
-    if air_interieur:       score_comp += 1
-    if prop_toit > 0.02:    score_comp += 1
-    if densite > 0.15:      score_comp += 1
-    complexity_score = min(score_comp, 5)
+    Args:
+        grid: Grille 3D numpy après prétraitement (blocs non-air = non-zéro)
 
-    global_score = round((size_score + aesthetic_score + complexity_score) / 3, 1)
+    Returns:
+        Dictionnaire avec les scores size, aesthetic, complexity et global (1-5)
+    """
+    total = grid.size
+    blocks = int(np.count_nonzero(grid))
+
+    if total == 0:
+        # Grille vide : on retourne le score minimal pour éviter une division par zéro
+        return {"size": 1, "aesthetic": 1, "complexity": 1, "global": 1.0}
+
+    # Densité brute : ratio blocs solides / volume total
+    density = blocks / total
+
+    # Amplification pour corriger le biais de sparsité (voir README — section Méthodologie)
+    norm_density = float(np.clip(density * 15, 0, 1))
+
+    # Conversion en scores 1-5 avec des coefficients différenciés par dimension
+    size       = int(np.clip(norm_density * 5,       1, 5))
+    aesthetic  = int(np.clip(norm_density * 4 + 1,   1, 5))
+    complexity = int(np.clip(norm_density * 6 + 1,   1, 5))
+    global_score = round((size + aesthetic + complexity) / 3, 2)
 
     return {
-        "size": int(size_score),
-        "aesthetic": int(aesthetic_score),
-        "complexity": int(complexity_score),
-        "global": float(global_score)
+        "size": size,
+        "aesthetic": aesthetic,
+        "complexity": complexity,
+        "global": global_score,
     }
 
 
-@app.get("/")
-def accueil():
-    return {"message": "Minecraft House Classifier API 🏠"}
+def save_temp_file(file_content: bytes, filename: str) -> str:
+    """
+    Sauvegarde temporairement un fichier uploadé sur disque pour le parser.
+    Retourne le chemin du fichier temporaire créé.
+    """
+    # Préfixe "tmp_" pour identifier facilement les fichiers à nettoyer
+    filepath = f"tmp_{filename}"
+    with open(filepath, "wb") as f:
+        f.write(file_content)
+    return filepath
+
+
+# =========================
+# ROUTES
+# =========================
+
+@app.get("/health")
+def health_check():
+    """
+    Endpoint de santé utilisé par Docker et les outils de monitoring.
+    Retourne le statut du serveur et indique si le modèle est chargé.
+    """
+    return {
+        "status": "ok",
+        "model_loaded": model is not None,
+    }
 
 
 @app.post("/predict")
 async def predict(file: UploadFile = File(...)):
-    if not (file.filename.endswith('.schem') or file.filename.endswith('.schematic')):
-        return {"error": "Fichier invalide"}
+    """
+    Endpoint principal : reçoit un fichier .schem ou .schematic,
+    le parse, extrait les features et retourne la classification + les scores.
+    """
+    # Validation du format de fichier avant tout traitement
+    if not file.filename.endswith((".schem", ".schematic")):
+        raise HTTPException(
+            status_code=422,
+            detail="Format invalide : seuls les fichiers .schem et .schematic sont acceptés."
+        )
 
-    with tempfile.NamedTemporaryFile(delete=False, suffix='.schem') as tmp:
-        contenu = await file.read()
-        tmp.write(contenu)
-        chemin_tmp = tmp.name
+    if model is None:
+        raise HTTPException(
+            status_code=503,
+            detail="Le modèle de classification n'est pas chargé. Vérifiez model/classifier.pkl."
+        )
+
+    # Lecture du contenu en mémoire avant d'écrire sur disque
+    file_content = await file.read()
+    filepath = save_temp_file(file_content, file.filename)
 
     try:
-        grille_brute, palette = lire_schem(chemin_tmp)
+        # Pipeline : parsing NBT → prétraitement → extraction de features → prédiction
+        grille_brute, palette = lire_schem(filepath)
+        grille = pretraiter(grille_brute, palette)
+        features = np.array(extraire_features(grille)).reshape(1, -1)
 
-        # Grille simplifiée + croppée (taille réelle, pas normalisée)
-        # C'est cette grille qu'on envoie au viewer pour un affichage lisible
-        grille_simplifiee = convertir_grille(grille_brute, palette)
-        grille_croppee = crop_air(grille_simplifiee)
+        # Prédiction probabiliste (plus riche que predict() seul)
+        proba = model.predict_proba(features)[0]
+        pred = int(np.argmax(proba))
+        confidence = float(np.max(proba))
 
-        # On limite à 64x64x64 max pour le viewer (évite les trop grosses structures)
-        MAX = 64
-        h = min(grille_croppee.shape[0], MAX)
-        l = min(grille_croppee.shape[1], MAX)
-        w = min(grille_croppee.shape[2], MAX)
-        grille_viewer = grille_croppee[:h, :l, :w]
+        # Scores automatiques basés sur la densité voxel
+        scores_auto = compute_ui_scores(grille)
 
-        # On stocke dans le cache pour le viewer
-        grilles_cache[file.filename] = grille_viewer.tolist()
-
-        # Pour le modèle IA on utilise le pipeline complet (normalisation 32x32x32)
-        grille_propre = pretraiter(grille_brute, palette)
-        features = extraire_features(grille_propre)
-
-        features_2d = features.reshape(1, -1)
-        prediction = modele.predict(features_2d)[0]
-        probabilites = modele.predict_proba(features_2d)[0]
-        confidence = float(probabilites[prediction])
-        is_house = bool(prediction == 1)
-
-        if is_house:
-            scores_auto = calculer_scores_auto(features)
-            scores_humains = get_scores(file.filename)
-            return {
-                "is_house": True,
-                "confidence": round(confidence, 2),
-                "filename": file.filename,
-                "scores_auto": scores_auto,
-                "scores_humains": scores_humains
-            }
+        # Scores humains s'ils existent déjà pour ce fichier
+        scores_humains = votes_db.get(file.filename)
 
         return {
-            "is_house": False,
-            "confidence": round(confidence, 2)
+            "filename": file.filename,
+            "is_house": bool(pred),
+            "confidence": round(confidence, 4),
+            "scores_auto": scores_auto,
+            "scores_humains": scores_humains,
         }
 
+    except ValueError as e:
+        # Erreur de parsing ou de format NBT inattendu
+        logger.error("Erreur de parsing pour %s : %s", file.filename, e)
+        raise HTTPException(status_code=422, detail=f"Erreur de lecture du fichier : {e}")
+
+    except Exception as e:
+        # Erreur inattendue : on log sans exposer les détails internes au client
+        logger.error("Erreur inattendue pour %s : %s", file.filename, e)
+        raise HTTPException(status_code=500, detail="Erreur interne du serveur.")
+
     finally:
-        os.unlink(chemin_tmp)
+        # Nettoyage garanti du fichier temporaire, même en cas d'erreur
+        if os.path.exists(filepath):
+            os.remove(filepath)
+            logger.info("Fichier temporaire supprimé : %s", filepath)
 
 
 @app.post("/vote")
-def voter(vote: Vote):
-    if not all(1 <= v <= 5 for v in [vote.size, vote.aesthetic, vote.complexity]):
-        return {"error": "Les notes doivent être entre 1 et 5"}
+def vote(v: Vote):
+    """
+    Enregistre le vote d'un utilisateur pour un fichier donné
+    et retourne les scores moyens mis à jour.
+    """
+    # Validation des plages de notes (1-5 uniquement)
+    for field, value in [("size", v.size), ("aesthetic", v.aesthetic), ("complexity", v.complexity)]:
+        if not (1 <= value <= 5):
+            raise HTTPException(
+                status_code=422,
+                detail=f"Le champ '{field}' doit être compris entre 1 et 5."
+            )
 
-    ajouter_vote(vote.filename, vote.size, vote.aesthetic, vote.complexity)
-    scores = get_scores(vote.filename)
+    # Initialisation de l'entrée si c'est le premier vote pour ce fichier
+    if v.filename not in votes_db:
+        votes_db[v.filename] = {
+            "size": 0,
+            "aesthetic": 0,
+            "complexity": 0,
+            "nb_votes": 0,
+        }
+
+    # Accumulation des votes pour calculer la moyenne ensuite
+    entry = votes_db[v.filename]
+    entry["size"]       += v.size
+    entry["aesthetic"]  += v.aesthetic
+    entry["complexity"] += v.complexity
+    entry["nb_votes"]   += 1
+
+    n = entry["nb_votes"]
+
     return {
-        "message": "Vote enregistré !",
-        "scores": scores
+        "scores": {
+            "size":       round(entry["size"]       / n, 2),
+            "aesthetic":  round(entry["aesthetic"]  / n, 2),
+            "complexity": round(entry["complexity"] / n, 2),
+            "global":     round((entry["size"] + entry["aesthetic"] + entry["complexity"]) / (3 * n), 2),
+            "nb_votes":   n,
+        }
     }
-
-
-@app.get("/scores/{filename}")
-def get_scores_fichier(filename: str):
-    scores = get_scores(filename)
-    if scores:
-        return scores
-    return {"message": "Pas encore de votes pour ce fichier"}
-
-
-@app.get("/gallery")
-def get_gallery():
-    return get_all_votes()
 
 
 @app.get("/preview/{filename}")
-def get_preview(filename: str):
-    if filename not in grilles_cache:
-        return {"error": "Grille non disponible. Réanalyse le fichier d'abord."}
-    return {
-        "filename": filename,
-        "grid": grilles_cache[filename]
-    }
+def preview(filename: str):
+    """
+    Retourne la grille voxel prétraitée d'un fichier déjà présent dans data/.
+    Utilisé par le viewer 3D du frontend.
+    """
+    # Recherche du fichier dans les deux catégories du dataset
+    maison_path = f"data/maison/{filename}"
+    autre_path  = f"data/autre/{filename}"
+
+    if os.path.exists(maison_path):
+        path = maison_path
+    elif os.path.exists(autre_path):
+        path = autre_path
+    else:
+        raise HTTPException(status_code=404, detail=f"Fichier '{filename}' introuvable dans data/.")
+
+    try:
+        grille_brute, palette = lire_schem(path)
+        grille = pretraiter(grille_brute, palette)
+        return {"grid": grille.tolist()}
+
+    except Exception as e:
+        logger.error("Erreur preview pour %s : %s", filename, e)
+        raise HTTPException(status_code=500, detail=f"Erreur lors du prétraitement : {e}")
