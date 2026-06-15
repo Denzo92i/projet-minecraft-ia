@@ -1,67 +1,117 @@
-Minecraft Schematic AI Classifier
-Système d'intelligence artificielle capable d'analyser automatiquement des structures Minecraft exportées au format .schem ou .schematic pour les classifier et évaluer leur qualité architecturale.
+# Minecraft Schematic AI Classifier
 
-🚀 À propos du projet
+> Système d'intelligence artificielle capable d'analyser automatiquement des structures Minecraft exportées au format `.schem` ou `.schematic` pour les classifier et évaluer leur qualité architecturale.
+
+![Interface du projet](image_902451.png)
+
+## 🚀 À propos du projet
+
 Ce projet implémente un pipeline complet de Machine Learning appliqué au gaming. Il transforme des données binaires NBT (Minecraft) en tenseurs numériques, permet la classification binaire (Maison vs Non-Maison) et génère des scores esthétiques basés sur la densité des matériaux.
 
-⚙️ Prérequis techniques
-Pour faire tourner le projet, vous avez besoin de :
+## 🛠️ Méthodologie et Défis Techniques
 
-Docker & Docker Compose (installés et démarrés).
+### 1. Organisation et Structuration
 
-Un navigateur web moderne.
+Nous avons adopté une architecture **modulaire** pour séparer clairement les responsabilités :
 
-🛠️ Installation et Démarrage
-Le projet est entièrement conteneurisé. Pour le lancer, rien de plus simple :
+- **Ingestion des données :** Le dossier `data/` contient notre dataset labellisé. Nous avons normalisé chaque fichier pour qu'il soit lisible par notre parser.
+- **Pipeline de traitement :** Le dossier `parsing/` transforme le binaire NBT en structures manipulables. Chaque fichier a un rôle précis (lecture, nettoyage, extraction).
+- **Isolation logicielle :** Grâce à `Docker`, nous avons encapsulé l'intégralité de l'environnement (Python, bibliothèques, API) pour garantir que le projet fonctionne à l'identique sur n'importe quelle machine.
 
-Cloner le dépôt :
+### 2. Problèmes rencontrés et Solutions
 
-Bash
+- **La gestion du vide (Sparsity) :** Dans Minecraft, une structure est composée à 90% d'air.
+  - *Solution :* Nous avons implémenté un algorithme de "Crop" dynamique qui détecte les limites réelles de la construction pour ignorer le vide inutile et se concentrer sur les blocs solides.
+
+- **Le Scoring déceptif :** Au début, nos builds avaient tous un score très bas à cause de la faible densité de blocs par rapport au volume total.
+  - *Solution :* Nous avons développé un algorithme de **normalisation par amplification** (x15). Ce facteur multiplicateur permet de rehausser la note pour qu'elle soit proportionnelle à la complexité esthétique perçue par un joueur humain.
+
+- **La communication Client-Serveur :** Le navigateur bloquait les requêtes vers l'API à cause des règles de sécurité (CORS).
+  - *Solution :* Nous avons configuré un *middleware* dans FastAPI pour autoriser les requêtes provenant de notre frontend, assurant une connexion fluide et sécurisée.
+
+### 3. Workflow de développement
+
+1. **Exploration :** Analyse des fichiers `.schem` dans des notebooks Jupyter pour comprendre la structure NBT.
+2. **Développement du modèle :** Entraînement du *Random Forest* sur les caractéristiques extraites.
+3. **Conteneurisation :** Rédaction du `Dockerfile` pour automatiser l'installation des dépendances.
+4. **Interface :** Création du viewer 3D pour rendre les résultats du modèle transparents et compréhensibles.
+
+## ⚙️ Prérequis techniques
+
+- **Docker & Docker Compose** (installés et démarrés)
+- Un navigateur web moderne
+
+## 🛠️ Installation et Démarrage
+
+```bash
+# 1. Cloner le dépôt
 git clone https://github.com/Denzo92i/projet-minecraft-ia.git
 cd projet-minecraft-ia
-Lancer l'environnement :
 
-Bash
+# 2. Lancer l'environnement
 docker-compose up --build
+```
+
 Accéder à l'application :
 
-API : http://localhost:8000
+| Service | URL |
+|---|---|
+| API | http://localhost:8000 |
+| Documentation interactive | http://localhost:8000/docs |
+| Statut du serveur | http://localhost:8000/health |
+| Frontend | `frontend/index.html` (ouvrir dans le navigateur) |
+| Viewer 3D | `frontend/viewer.html` (ouvrir dans le navigateur) |
 
-Frontend : Ouvrez frontend/index.html dans votre navigateur.
+## 🧠 Pipeline de données & IA
 
-Viewer 3D : Ouvrez frontend/viewer.html pour visualiser les structures.
-
-🧠 Pipeline de données & IA
 Le projet suit une logique de traitement séquentiel pour garantir la précision :
 
-Parsing NBT : Lecture du format Sponge/Minecraft via nbtlib.
+1. **Parsing NBT** : Lecture du format Sponge/Minecraft via `nbtlib`.
+2. **Prétraitement** : Nettoyage des voxels d'air et normalisation de la grille 3D en `32×32×32`.
+3. **Extraction de features** : Calcul de 15 caractéristiques (densité, volume englobant, ratio de matériaux...).
+4. **Classification** : Modèle *Random Forest* (`scikit-learn`) pour la prédiction binaire Maison / Non-Maison.
+5. **Scoring** : Algorithme de normalisation par amplification de densité (×15) pour générer un score de 1 à 5.
 
-Prétraitement : Nettoyage des voxels d'air et normalisation de la grille 3D.
+## 📂 Structure du dépôt
+projet-minecraft-ia/
 
-Extraction de features : Calcul de la densité, volume englobant et ratio de matériaux.
+├── api/                # Backend FastAPI (routes, logique métier)
 
-Classification : Utilisation d'un modèle Random Forest (scikit-learn) pour la prédiction binaire.
+│   └── main.py
 
-Scoring : Algorithme de normalisation par amplification de densité (x15) pour générer un score de 1 à 5.
+├── data/               # Dataset labellisé
 
-📂 Structure du dépôt
-(Garde ici ton arborescence que tu as déjà, elle est très claire)
+│   ├── maison/         # Fichiers .schem classifiés "maison"
 
-👥 Équipe & Remerciements
-Projet développé par Dylan, Lola et Nicolas dans le cadre du cursus NationsGlory.
+│   └── autre/          # Fichiers .schem classifiés "autre"
 
-Note obtenue : 17/20
+├── frontend/           # Interface Web (HTML/JS)
 
-Quelques conseils pour finaliser ton repo :
-Ajoute une capture d'écran : Dans ton README.md, ajoute une ligne comme celle-ci sous la section "À propos" :
-![Interface du projet](image_902451.png) (Vérifie que le nom du fichier est bien présent dans ton repo). Voir le résultat visuel immédiatement augmente énormément la qualité perçue du projet.
+│   ├── index.html      # Classificateur principal
 
-Fichier .gitignore : Vérifie que ton dossier __pycache__ ou les fichiers temporaires ne sont pas poussés sur GitHub. Si ce n'est pas fait, crée un fichier nommé .gitignore à la racine contenant :
+│   └── viewer.html     # Viewer 3D des structures
 
-Plaintext
-__pycache__/
-*.pyc
-.ipynb_checkpoints/
-*.pkl
-.env
-Le fichier dataset.csv : Si ton jeu de données n'est pas confidentiel, assure-toi qu'il est bien présent dans le repo pour qu'on puisse voir la structure de tes données d'entraînement.
+├── model/              # Modèle entraîné
+
+│   └── classifier.pkl
+
+├── parsing/            # Pipeline de lecture et décodage NBT
+
+│   ├── parser.py
+
+│   ├── preprocessor.py
+
+│   └── features.py
+
+├── Dockerfile
+
+├── docker-compose.yml
+
+├── requirements.txt
+
+└── README.md
+
+
+## 👥 Équipe
+
+Projet développé par **Dylan**, **Lola** et **Nicolas** dans le cadre du cursus NationsGlory.
