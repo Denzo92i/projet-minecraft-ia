@@ -60,6 +60,20 @@ Accéder à l'application :
 | Frontend | `frontend/index.html` (ouvrir dans le navigateur) |
 | Viewer 3D | `frontend/viewer.html` (ouvrir dans le navigateur) |
 
+Voici une démonstration de l'interface et du viewer 3D :
+
+<p align="center">
+  <img src="assets/index_img.png" alt="Interface de classification" width="600">
+  <br>
+  <em>Interface principale : Classification et Scoring IA</em>
+</p>
+
+<p align="center">
+  <img src="assets/viewer_img.png" alt="Viewer 3D" width="600">
+  <br>
+  <em>Viewer 3D : Visualisation des structures analysées</em>
+</p>
+
 ## 🧠 Pipeline de données & IA
 
 Le projet suit une logique de traitement séquentiel pour garantir la précision :
