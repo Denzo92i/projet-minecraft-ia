@@ -9,7 +9,21 @@
 
 > Système d'intelligence artificielle capable d'analyser automatiquement des structures Minecraft exportées au format `.schem` ou `.schematic` pour les classifier et évaluer leur qualité architecturale.
 
-## 🚀 À propos du projet
+## 🚀 À propos du projet## 📸 Aperçu visuel
+
+<p align="center">
+  <img src="assets/index_img.png" alt="Interface de classification" width="600">
+  <br>
+  <em>Figure 1 : Interface principale avec résultat de classification et scoring IA.</em>
+</p>
+
+<p align="center">
+  <img src="assets/viewer_img.png" alt="Viewer 3D" width="600">
+  <br>
+  <em>Figure 2 : Visualiseur 3D interactif des structures analysées.</em>
+</p>
+
+
 
 Ce projet implémente un pipeline complet de Machine Learning appliqué au gaming. Il transforme des données binaires NBT (Minecraft) en tenseurs numériques, permet la classification binaire (Maison vs Non-Maison) et génère des scores esthétiques basés sur la densité des matériaux.
 
