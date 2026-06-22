@@ -9,7 +9,7 @@
 
 > Système d'intelligence artificielle capable d'analyser automatiquement des structures Minecraft exportées au format `.schem` ou `.schematic` pour les classifier et évaluer leur qualité architecturale.
 
-## 🚀 À propos du projet ! 📸 Aperçu visuel
+## 🚀 À propos du projet  ! 📸 Aperçu visuel
 
 <p align="center">
   <img src="assets/index_img.png" alt="Interface de classification" width="600">
